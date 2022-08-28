@@ -1802,6 +1802,12 @@ def unique(data, is_sorted=True, return_counts=False):
     return TupleWrapper(_make.unique(data, is_sorted, return_counts), 4)
 
 
+def unique_dim(data, is_sorted=True, return_counts=False, dim=-1):
+    if return_counts:
+        return TupleWrapper(_make.unique_dim(data, is_sorted, return_counts, dim), 3)
+    return TupleWrapper(_make.unique_dim(data, is_sorted, return_counts, dim), 2)
+
+
 def invert_permutation(data):
     """Computes the inverse permutation of data.
     This operation computes the inverse of an index permutation.

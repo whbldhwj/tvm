@@ -313,3 +313,55 @@ def unique(data, is_sorted=True, return_counts=False):
     if return_counts:
         return [outs[0], indices, outs[1], num_unique_elements, outs[2]]
     return [outs[0], indices, outs[1], num_unique_elements]
+
+def unique_dim(data, is_sorted=True, return_counts=False):
+    sorted_data = sort(data)
+    argsorted_indices = argsort(data, dtype="int32")
+    # adjacent difference
+    adjacent_diff = _calc_adjacent_diff(sorted_data, "int32", tir.NE)
+    # inclusive scan
+    inc_scan = cumsum(adjacent_diff, dtype="int32", exclusive=0)
+    # total number of unique elements
+    num_unique_elements = _calc_num_unique(inc_scan)
+    # prepare outputs
+    if return_counts:
+        out_data_shape = [data.shape] * 3
+        out_dtypes = [data.dtype, "int32", "int32"]
+    else:
+        out_data_shape = [data.shape] * 2
+        out_dtypes = [data.dtype, "int32"]
+    # prepare inputs and fcompute
+
+    first_occurence = _calc_first_occurence(argsorted_indices, inc_scan)
+    if is_sorted:
+        in_data = [data, argsorted_indices, inc_scan]
+        if return_counts:
+            fcompute = lambda ins, outs: _calc_unique_ir(*ins, None, *outs)
+        else:
+            fcompute = lambda ins, outs: _calc_unique_ir(*ins, None, *outs, None)
+
+        indices = first_occurence
+    else:
+        # calculate index converter by sorting unique elements by their first occurence
+        argsorted_first_occurence = argsort(first_occurence, dtype="int32")
+        index_converter = argsort(argsorted_first_occurence, dtype="int32")
+        in_data = [data, argsorted_indices, inc_scan, index_converter]
+        if return_counts:
+            fcompute = lambda ins, outs: _calc_unique_ir(*ins, *outs)
+        else:
+            fcompute = lambda ins, outs: _calc_unique_ir(*ins, *outs, None)
+        # First occurence is in order of sorted unique output, if we sort the first_occurence array
+        # we get the correct result
+        indices = sort(first_occurence)
+
+    outs = te.extern(
+        out_data_shape,
+        in_data,
+        fcompute,
+        dtype=out_dtypes,
+        name="_calc_unique",
+        tag="_calc_unique_cpu",
+    )
+    if return_counts:
+        return [outs[0], outs[1], outs[2]]
+    return [outs[0], outs[1]]

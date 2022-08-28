@@ -389,6 +389,7 @@ class PyTorchOpConverter:
     def unsqueeze(self, inputs, input_types):
         data = inputs[0]
         axis = inputs[1]
+        #import pdb; pdb.set_trace()
 
         return _op.transform.expand_dims(data, int(axis), 1)
 
@@ -419,6 +420,7 @@ class PyTorchOpConverter:
         return _op.tensor.concatenate(data, int(axis))
 
     def slice(self, inputs, input_types):
+        #import pdb; pdb.set_trace()
         axis_dtype = "int64"
         index_size_limit = sys.maxsize
         data = inputs[0]
@@ -564,6 +566,7 @@ class PyTorchOpConverter:
         return _op.split(data, indices, dim)
 
     def select(self, inputs, input_types):
+        #import pdb; pdb.set_trace()
         data = inputs[0]
         dim = int(inputs[1])
         index = _wrap_const(inputs[2])
@@ -738,6 +741,7 @@ class PyTorchOpConverter:
             dtype = _convert_dtype_value(inputs[1])
         else:
             dtype = self.default_dtype
+        #import pdb; pdb.set_trace()
         return self.full_impl(data, 0, dtype)
 
     def zeros_like(self, inputs, input_types):
@@ -1552,6 +1556,14 @@ class PyTorchOpConverter:
     def clone(self, inputs, input_types):
         data = inputs[0]
         return _op.tensor.copy(data)
+
+    def copy(self, inputs, input_types):
+        #import pdb; pdb.set_trace()
+        data_dst = inputs[0]
+        data_src = inputs[1]
+        non_blocking = inputs[2]
+        # FIXME: support in-place copy
+        return _op.tensor.copy(data_src)
 
     def log_softmax(self, inputs, input_types):
         data = inputs[0]
@@ -2609,7 +2621,7 @@ class PyTorchOpConverter:
         return _expr.const(is_float)
 
     def unique(self, inputs, input_types):
-        assert len(inputs) == 4
+        assert len(inputs) == 5
         [data, is_sorted, return_inverse, return_counts] = inputs
         if not is_sorted:
             logger.warning("TVM always assumes sorted=True for torch.unique")
@@ -2627,6 +2639,46 @@ class PyTorchOpConverter:
             )
             unique_sliced = _op.strided_slice(unique, begin=[0], end=num_uniq, slice_mode="size")
             return (unique_sliced, inverse_indices)
+
+    def unique_dim(self, inputs, input_types):
+        #import pdb; pdb.set_trace()
+        assert len(inputs) == 5
+        [data, dim, is_sorted, return_inverse, return_counts] = inputs
+        if not is_sorted:
+            logger.warning("TVM always assumes sorted=True for torch.unique_dim")
+            is_sorted = True
+        if return_counts:
+            [unique, inverse_indices, counts] = _op.unique_dim(
+                data, is_sorted=is_sorted, return_counts=True, dim=dim
+            )
+            return (unique, inverse_indices, counts)
+        else:
+            [unique, inverse_indices] = _op.unique_dim(
+                data, is_sorted=is_sorted, return_counts=False, dim=dim
+            )
+            return (unique, inverse_indices)
+        '''
+        if return_counts:
+            [unique, indices, inverse_indices, num_uniq, counts] = _op.unique(
+                data, is_sorted=is_sorted, return_counts=True, dim=dim
+            )
+            unique_sliced = _op.strided_slice(unique, begin=[0], end=num_uniq, slice_mode="size")
+            counts_sliced = _op.strided_slice(counts, begin=[0], end=num_uniq, slice_mode="size")            
+            return (unique_sliced, inverse_indices, counts_sliced)
+            #return (unique, inverse_indices, counts)
+            #print(len(ret))
+            #return (ret[0], ret[1], ret[2])
+        else:
+            [unique, indices, inverse_indices, num_uniq] = _op.unique(
+                data, is_sorted=is_sorted, return_counts=False, dim=dim
+            )
+            #[unique, inverse_indices] = _op.unique(
+            #    data, is_sorted=is_sorted, return_counts=False, dim=dim
+            #)
+            unique_sliced = _op.strided_slice(unique, begin=[0], end=num_uniq, slice_mode="size")
+            return (unique_sliced, inverse_indices)
+            #return (unique, inverse_indices)
+        '''
 
     def nll_loss(self, inputs, input_types):
         assert len(inputs) == 5
@@ -3533,6 +3585,7 @@ class PyTorchOpConverter:
             "aten::reshape": self.reshape,
             "aten::reshape_as": self.reshape_as,
             "aten::clone": self.clone,
+            #"aten::copy_": self.copy,
             "aten::log_softmax": self.log_softmax,
             "aten::sigmoid": self.sigmoid,
             "aten::softplus": self.softplus,
@@ -3667,6 +3720,7 @@ class PyTorchOpConverter:
             "aten::argsort": self.argsort,
             "aten::sort": self.sort,
             "aten::_unique2": self.unique,
+            "aten::unique_dim": self.unique_dim,
             "aten::nll_loss": self.nll_loss,
             "aten::nll_loss2d": self.nll_loss,
             "aten::nll_loss_nd": self.nll_loss,
@@ -4448,6 +4502,7 @@ def from_pytorch(
     default_dtype="float32",
     use_parser_friendly_name=False,
     keep_quantized_weight=False,
+    print_relay_ir=False,
 ):
     """Load PyTorch model in the form of a scripted PyTorch model and convert into relay.
     The companion parameters will be handled automatically.
@@ -4499,6 +4554,8 @@ def from_pytorch(
         Dict of converted parameters stored in tvm.runtime.ndarray format
     """
     import torch
+
+    #import pdb; pdb.set_trace()
 
     mod = tvm.IRModule()
     prelude = Prelude(mod)
@@ -4578,5 +4635,9 @@ def from_pytorch(
     func_args = data_inputs + func_args
 
     mod["main"] = tvm.relay.Function(func_args, ret)
+    #import pdb; pdb.set_trace()    
+    if print_relay_ir:
+        print("TVM Relay graph")
+        print(mod["main"])
 
     return transform.RemoveUnusedFunctions()(mod), tvm_params

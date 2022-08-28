@@ -266,6 +266,13 @@ TVM_REGISTER_GLOBAL("tvm.contrib.thrust.stable_sort_by_key")
   }
 });
 
+template<typename T>
+struct plus : public thrust::binary_function<T,T,T>
+{
+  __host__ __device__
+  T operator()(T x, T y) {return x + y;}
+};
+
 template<typename InType, typename OutType>
 void thrust_scan(DLTensor* data,
                  DLTensor* output,
@@ -273,6 +280,8 @@ void thrust_scan(DLTensor* data,
   thrust::device_ptr<InType> data_ptr(static_cast<InType *>(data->data));
   thrust::device_ptr<OutType> output_ptr(static_cast<OutType *>(output->data));
   const auto scan_size = data->shape[data->ndim - 1];
+  //size_t scan_size = data->shape[data->ndim - 1];
+  //LOG(INFO) << scan_size;
 
   if (scan_size == 0) return;
 
@@ -287,15 +296,23 @@ void thrust_scan(DLTensor* data,
 
   if (size == static_cast<size_t>(data->shape[data->ndim - 1])) {
     if (exclusive && need_cast) {
+      //LOG(INFO) << "launched from here1";
       thrust::exclusive_scan(data_cast_ptr, data_cast_ptr + scan_size, output_ptr);
     } else if (exclusive && !need_cast) {
+      //LOG(INFO) << "launched from here2";
       thrust::exclusive_scan(data_ptr, data_ptr + scan_size, output_ptr);
     } else if (!exclusive && need_cast) {
+      //LOG(INFO) << "launched from here3";
       thrust::inclusive_scan(data_cast_ptr, data_cast_ptr + scan_size, output_ptr);
     } else {
+      //LOG(INFO) << "launched from here4";
+      //LOG(INFO) << scan_size;
+      //thrust::plus<OutType> binary_op;
+      //thrust::inclusive_scan(data_ptr, data_ptr + scan_size, output_ptr, plus<OutType>{});
       thrust::inclusive_scan(data_ptr, data_ptr + scan_size, output_ptr);
     }
   } else {
+    //LOG(INFO) << "launched from here5";
     // Use thrust segmented scan to compute scan on the inner most axis
     // data->shape[0] * data->shape[1] * ... * data->shape[ndim - 2] scans are
     // computed in parallel
@@ -330,6 +347,8 @@ TVM_REGISTER_GLOBAL("tvm.contrib.thrust.sum_scan")
 
   auto in_dtype = DLDataType2String(data->dtype);
   auto out_dtype = DLDataType2String(output->dtype);
+  //LOG(INFO) << in_dtype;
+  //LOG(INFO) << out_dtype;
 
   if (in_dtype == "bool") {
     if (out_dtype == "int32") {
@@ -346,7 +365,8 @@ TVM_REGISTER_GLOBAL("tvm.contrib.thrust.sum_scan")
     }
   } else if (in_dtype == "int32") {
     if (out_dtype == "int32") {
-      thrust_scan<int, int>(data, output, exclusive);
+      //LOG(INFO) << "enter from here";
+      thrust_scan<int, int>(data, output, exclusive);      
     } else if (out_dtype == "int64") {
       thrust_scan<int, int64_t>(data, output, exclusive);
     } else if (out_dtype == "float32") {
@@ -387,6 +407,222 @@ TVM_REGISTER_GLOBAL("tvm.contrib.thrust.sum_scan")
   } else {
     LOG(FATAL) << "Unsupported input dtype: " << in_dtype
                << ". Supported input dtypes are bool, int32, int64, float32, and float64";
+  }
+});
+
+template<typename DataType, typename IndicesType>
+void thrust_sort_dim_zero(DLTensor *data_in,
+                          DLTensor *indices_out) { 
+  // Input data has two dimensions.                                 
+  thrust::device_ptr<DataType> data_ptr(static_cast<DataType *>(data_in->data));  
+  thrust::device_ptr<IndicesType> indices_ptr(static_cast<IndicesType *>(indices_out->data));
+
+  size_t n_indices = indices_out->shape[0];
+  size_t n = data_in->shape[1];
+
+  //LOG(INFO) << data_in->ndim << " " << data_in->shape[0] << " " << data_in->shape[1];
+  //LOG(INFO) << indices_out->ndim << " " << indices_out->shape[0];
+  //LOG(INFO) << n_indices;
+  //LOG(INFO) << n;
+
+  //thrust::device_vector<IndicesType> indices_thrust(n_indices);  
+  //thrust::device_vector<DataType> data_thrust(n_indices * n);
+  //LOG(INFO) << "start copy data";
+  //thrust::copy(data_ptr, data_ptr + n_indices * n, data_thrust.begin());
+  //LOG(INFO) << "end copy data";
+  //LOG(INFO) << data_thrust.size();
+  //cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  //at::cuda::ThrustAllocator allocator;
+  //auto policy = thrust::cuda::par(allocator).on(stream);
+
+  // initialize indices to 0,1,2,3, ....
+  thrust::sequence(indices_ptr, indices_ptr + n_indices);
+  //thrust::sequence(indices_thrust.begin(), indices_thrust.end());
+  
+  //thrust::sort(indices_ptr, indices_ptr + n_indices);
+  /*
+  for (int32_t i = 0; i < n * n_indices; ++i) {
+    indices_ptr[0] += data_ptr[i];
+  }
+  */
+  //thrust::device_ptr<DataType> data_thrust_ptr = data_thrust.data();
+  //LOG(INFO) << "start sort";
+  
+  thrust::sort(thrust::device, indices_ptr, indices_ptr + n_indices, 
+  //thrust::sort(thrust::device, indices_thrust.begin(), indices_thrust.end(),
+    [=] __device__ (IndicesType a, IndicesType b) -> bool {
+      for (size_t i = 0; i < n; ++i) {
+        //if (i + a * n >= n_indices * n)
+        //  printf("%d %d %d\n", i, a, b);
+        //if (i + b * n >= n_indices * n)
+        //  printf("%d %d %d\n", i, a, b);  
+        DataType lhs = data_ptr[i + a * n];
+        DataType rhs = data_ptr[i + b * n];
+        //DataType lhs = data_thrust[i + a * n];
+        //DataType rhs = data_thrust[i + b * n];
+        //DataType lhs = data_thrust_ptr[i + a * n];
+        //DataType rhs = data_thrust_ptr[i + b * n];
+        if (lhs < rhs) {
+          return true;
+        } else if (lhs > rhs) {
+          return false;
+        }
+      }
+      return false;
+    }
+  );
+  
+  //LOG(INFO) << "start copy";
+  //thrust::copy(indices_thrust.begin(), indices_thrust.end(), indices_ptr);
+  //LOG(INFO) << "end copy";
+  /*
+  void *d_temp_storage = nullptr;
+  std::size_t temp_storage_bytes = 0;
+  
+  cub::DeviceMergeSort::SortKeys(
+    d_temp_storage, temp_storage_bytes,
+    indices_ptr, n_indices, 
+    [=] __device__ (int32_t a, int32_t b) -> bool {
+          for (int32_t i = 0; i < n; ++i) {
+            //printf("%d %d %d\n", i, a, b);
+            int lhs = data_ptr[i + a * n];
+            int rhs = data_ptr[i + b * n];        
+            if (lhs < rhs) {
+              return true;
+            } else if (lhs > rhs) {
+              return false;
+            }
+          }
+          return false;
+    }
+  );
+
+  cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+  cub::DeviceMergeSort::SortKeys(
+    d_temp_storage, temp_storage_bytes,
+    indices_ptr, n_indices, 
+    [=] __device__ (int32_t a, int32_t b) -> bool {
+          for (int32_t i = 0; i < n; ++i) {
+            //printf("%d %d %d\n", i, a, b);
+            int lhs = data_ptr[i + a * n];
+            int rhs = data_ptr[i + b * n];        
+            if (lhs < rhs) {
+              return true;
+            } else if (lhs > rhs) {
+              return false;
+            }
+          }
+          return false;
+    }
+  );
+  */
+  
+  //printf("completed\n");
+  //LOG(INFO) << "completed";
+}
+
+TVM_REGISTER_GLOBAL("tvm.contrib.thrust.sort_dim_zero")
+.set_body([](TVMArgs args, TVMRetValue* ret) {
+  ICHECK_GE(args.num_args, 2);
+  DLTensor* input = args[0];
+  DLTensor* indices_out = args[1];
+
+  auto data_dtype = DLDataType2String(input->dtype);
+  auto out_dtype = DLDataType2String(indices_out->dtype);
+
+  if (data_dtype == "int32") {
+    if (out_dtype == "int32") {
+      thrust_sort_dim_zero<int32_t, int32_t>(input, indices_out);
+    } else {
+      LOG(FATAL) << "Unsupported output dtype: " << out_dtype;
+    }
+  } else if (data_dtype == "int64") {
+    if (out_dtype == "int32") {
+      thrust_sort_dim_zero<int64_t, int32_t>(input, indices_out);
+    } else if (out_dtype == "int64") {
+      thrust_sort_dim_zero<int64_t, int64_t>(input, indices_out);
+    } else {
+      LOG(FATAL) << "Unsupported output dtype: " << out_dtype;
+    }  
+  } else {
+    LOG(FATAL) << "Unsupported input dtype: " << data_dtype;
+  }
+});
+
+/*
+template<typename T>
+struct diff : public thrust::binary_function<T,T,T>
+{
+  __host__ __device__ T operator()(const T &lhs, const T &rhs) const {
+    for (size_t i = 0; i < n; ++i) {
+        DataType lhs = data_ptr[i + a * n];
+        DataType rhs = data_ptr[i + b * n];
+        if (lhs != rhs)
+          return (IndicesType)1;
+    }
+  }
+}
+*/
+
+template<typename DataType, typename IndicesType>
+void thrust_adjacent_diff_dim_zero(DLTensor *data_in,
+                                   DLTensor *indices_in,
+                                   DLTensor *adjacent_out) { 
+  // Input data has two dimensions.
+  thrust::device_ptr<DataType> data_ptr(static_cast<DataType *>(data_in->data));  
+  thrust::device_ptr<IndicesType> indices_ptr(static_cast<IndicesType *>(indices_in->data));  
+  thrust::device_ptr<IndicesType> adjacent_diff_ptr(static_cast<IndicesType *>(adjacent_out->data));
+
+  size_t n_indices = indices_in->shape[0];
+  size_t n = data_in->shape[1];
+  
+  thrust::adjacent_difference(
+    indices_ptr, 
+    indices_ptr + n_indices, 
+    adjacent_diff_ptr, 
+    //[=] __device__ (IndicesType a, IndicesType b) -> IndicesType {
+    [=] __host__ __device__ (IndicesType a, IndicesType b) {
+      for (size_t i = 0; i < n; ++i) {
+        DataType lhs = data_ptr[i + a * n];
+        DataType rhs = data_ptr[i + b * n];
+        if (lhs != rhs)
+          return (IndicesType)1;
+      }
+      return (IndicesType)0;
+    }
+  );
+  adjacent_diff_ptr[0] = 0;
+}
+
+TVM_REGISTER_GLOBAL("tvm.contrib.thrust.adjacent_difference_dim_zero")
+.set_body([](TVMArgs args, TVMRetValue* ret) {
+  ICHECK_GE(args.num_args, 3);
+  DLTensor* input = args[0];
+  DLTensor* indices = args[1];
+  DLTensor* adjacent_diff_out = args[2];
+
+  auto data_dtype = DLDataType2String(input->dtype);
+  auto out_dtype = DLDataType2String(indices->dtype);
+
+  if (data_dtype == "int32") {
+    if (out_dtype == "int32") {
+      thrust_adjacent_diff_dim_zero<int32_t, int32_t>(input, indices, adjacent_diff_out);
+    } else if (out_dtype == "int64") {
+      thrust_adjacent_diff_dim_zero<int32_t, int64_t>(input, indices, adjacent_diff_out);
+    } else {
+      LOG(FATAL) << "Unsupported output dtype: " << out_dtype;
+    }
+  } else if (data_dtype == "int64") {
+    if (out_dtype == "int32") {
+      thrust_adjacent_diff_dim_zero<int64_t, int32_t>(input, indices, adjacent_diff_out);
+    } else if (out_dtype == "int64") {
+      thrust_adjacent_diff_dim_zero<int64_t, int64_t>(input, indices, adjacent_diff_out);
+    } else {
+      LOG(FATAL) << "Unsupported output dtype: " << out_dtype;
+    }    
+  } else {
+    LOG(FATAL) << "Unsupported input dtype: " << data_dtype;
   }
 });
 

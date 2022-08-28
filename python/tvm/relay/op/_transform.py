@@ -242,6 +242,15 @@ def compute_unique(attrs, inputs, output_type):
 
 _reg.register_strategy("unique", strategy.unique_strategy)
 
+# unique_dim
+@_reg.register_compute("unique_dim")
+def compute_unique_dim(attrs, inputs, output_type):
+    """Compute definition of unique"""
+    return topi.unique_dim(inputs[0], attrs.sorted, attrs.return_inverse ,attrs.return_counts)
+
+
+_reg.register_strategy("unique_dim", strategy.unique_dim_strategy)
+
 # invert_permutation
 _reg.register_strategy("invert_permutation", strategy.invert_permutation_strategy)
 _reg.register_shape_func("invert_permutation", False, elemwise_shape_func)

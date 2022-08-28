@@ -62,6 +62,7 @@ ExternOp::ExternOp(std::string name, std::string tag, Map<String, ObjectRef> att
   n->attrs = std::move(attrs);
   ICHECK_EQ(inputs.size(), input_placeholders.size());
   for (size_t i = 0; i < inputs.size(); ++i) {
+    //LOG(INFO) << i << "/" << inputs.size() << ": " << n->name << "/" << n->tag;
     ICHECK_EQ(inputs[i]->dtype, input_placeholders[i]->dtype);
     ICHECK_EQ(inputs[i]->shape.size(), input_placeholders[i]->shape.size());
     for (size_t dim = 0; dim < inputs[i]->shape.size(); ++dim) {

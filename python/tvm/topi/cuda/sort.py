@@ -1168,3 +1168,40 @@ def stable_sort_by_key_thrust(keys, values, for_scatter=False):
         tag="stable_sort_by_key",
     )
     return out[0], out[1]
+
+def lexsort(data, output_dtype="int64"):
+    """Performs lexsort along the dimension zero of the array.
+    """
+    ndim = len(data.shape)
+    assert ndim == 2
+    n = data.shape[1]
+    # Starting from the last column, 
+    # sort it, get the indices, reorder the previous column, 
+    # and repeat, return the sorted indices of the first column
+    #indices = te.compute((data.shape[0],), lambda i: i)
+    # NOTE: this can be optimized, we should only sort the whole tensor
+    # once, and then use the argsort_indices to reconstruct the index
+    if isinstance(n, tvm.tir.IntImm):
+        n = n.value
+    cur_column_idx = n - 1        
+    while cur_column_idx > -1:
+        if cur_column_idx != n - 1:
+            # apply argsort_indices to reorder the current tensor
+            data = tvm.topi.take(data, argsort_indices, axis=0)        
+
+        # strided_slice the current tensor
+        begin = [0] * (ndim - 1) + [cur_column_idx]
+        end = data.shape[:-1] + [cur_column_idx + 1]
+        strides = [1] * ndim        
+        cur_column = strided_slice(data, begin, end, strides)
+        cur_column = tvm.topi.squeeze(cur_column)        
+        
+        # argsort the current tensor                
+        argsort_indices = argsort(cur_column, dtype=output_dtype)
+        if cur_column_idx == n - 1:
+            indices = argsort_indices
+        if cur_column_idx != n - 1:
+            sorted_values, indices = sort_by_key(keys=cur_column, values=indices)
+        cur_column_idx -= 1        
+            
+    return tvm.topi.squeeze(indices)

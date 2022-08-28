@@ -4213,6 +4213,61 @@ RELAY_REGISTER_OP("unique")
     .set_support_level(3)
     .set_attr<TOpPattern>("TOpPattern", kOpaque);
 
+//TVM_REGISTER_NODE_TYPE(UniqueDimAttrs);
+
+bool UniqueDimRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
+                  const TypeReporter& reporter) {
+  // types: [data, result]
+  ICHECK_EQ(types.size(), 2) << "Unique: expect 2 types but " << types.size() << " provided";
+  ICHECK_EQ(num_inputs, 1) << "Unique: expect 1 inputs but " << num_inputs << " provided";
+  auto data = types[0].as<TensorTypeNode>();
+  if (data == nullptr) {
+    ICHECK(types[0].as<IncompleteTypeNode>())
+        << "Unique: expect input type to be TensorType but get " << types[0];
+    return false;
+  }
+  //const int ndim = static_cast<int>(data->shape.size());
+  //ICHECK_EQ(ndim, 1) << "Unique: input must be 1-D tensor";
+
+  std::vector<Type> fields;
+  const auto* param = attrs.as<UniqueAttrs>();
+
+  std::vector<IndexExpr> oshape;
+  oshape.emplace_back(data->shape[0]);
+
+  fields.push_back(TensorType(data->shape, data->dtype));               // unique
+  //fields.push_back(TensorType(data->shape, DataType::Int(32)));         // indices
+  fields.push_back(TensorType(oshape, DataType::Int(32)));  // inverse_indices
+  
+  if (param->return_counts) {
+    fields.push_back(TensorType(oshape, DataType::Int(32)));  // counts
+    //fields.push_back(TensorType(data->shape, DataType::Int(32)));  // counts
+  }
+  reporter->Assign(types[1], TupleType(Array<Type>(fields)));
+  return true;
+}
+
+Expr MakeUniqueDim(Expr data, bool sorted, bool return_counts, int dim) {
+  auto attrs = make_object<UniqueAttrs>();
+  attrs->sorted = sorted;
+  attrs->return_counts = return_counts;
+  attrs->dim = dim;
+  static const Op& op = Op::Get("unique_dim");
+  return Call(op, {data}, Attrs(attrs), {});
+}
+
+TVM_REGISTER_GLOBAL("relay.op._make.unique_dim").set_body_typed(MakeUniqueDim);
+
+RELAY_REGISTER_OP("unique_dim")
+    .describe(
+        R"code(This operation returns the unique elements and the new index of each item in a given 1-D array.
+    )code" TVM_ADD_FILELINE)
+    .set_num_inputs(1)
+    .add_argument("data", "Tensor", "The input tensor")
+    .add_type_rel("unique_dim", UniqueDimRel)
+    .set_support_level(3)
+    .set_attr<TOpPattern>("TOpPattern", kOpaque);    
+
 // invert_permutation
 Expr MakeInvertPermutation(Expr data) {
   static const Op& op = Op::Get("invert_permutation");

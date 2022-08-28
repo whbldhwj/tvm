@@ -536,13 +536,35 @@ struct ScanopAttrs : public tvm::AttrsNode<ScanopAttrs> {
 struct UniqueAttrs : public tvm::AttrsNode<UniqueAttrs> {
   bool sorted;
   bool return_counts;
+  Integer dim;
   TVM_DECLARE_ATTRS(UniqueAttrs, "relay.attrs.UniqueAttrs") {
     TVM_ATTR_FIELD(sorted).describe("Whether the unique elements are sorted").set_default(true);
     TVM_ATTR_FIELD(return_counts)
         .describe("Whether to return an additional tensor with counts of each unique elements")
         .set_default(false);
+    TVM_ATTR_FIELD(dim)
+        .describe("the dimension to apply unique")
+        .set_default(-1);
   }
 };  // struct UniqueAttrs
+
+/*! \brief Attributes used in unique operator */
+/*
+struct UniqueDimAttrs : public tvm::AttrsNode<UniqueDimAttrs> {
+  bool sorted;
+  bool return_counts;
+  Integer dim;
+  TVM_DECLARE_ATTRS(UniqueDimAttrs, "relay.attrs.UniqueDimAttrs") {
+    TVM_ATTR_FIELD(sorted).describe("Whether the unique elements are sorted").set_default(true);
+    TVM_ATTR_FIELD(return_counts)
+        .describe("Whether to return an additional tensor with counts of each unique elements")
+        .set_default(false);
+    TVM_ATTR_FIELD(dim)
+        .describe("the dimension to apply unique")
+        .set_default(-1);
+  }
+};  // struct UniqueDimAttrs
+*/
 
 /*! \brief Attributes used in einsum operator */
 struct EinsumAttrs : public tvm::AttrsNode<EinsumAttrs> {

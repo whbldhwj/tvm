@@ -293,6 +293,7 @@ def scan_thrust(
     """
     data_buf = tvm.tir.decl_buffer(data.shape, data.dtype, "data_buf", data_alignment=8)
     output_buf = tvm.tir.decl_buffer(data.shape, output_dtype, "output_buf", data_alignment=8)
+    #import pdb; pdb.set_trace()
 
     output = te.extern(
         [data.shape],
@@ -366,6 +367,7 @@ def exclusive_scan(
         target = tvm.target.Target.current()
 
         # TODO: add support for a prod_scan
+        '''
         if (
             target
             and binop == tvm.tir.generic.add
@@ -377,6 +379,7 @@ def exclusive_scan(
             return scan_thrust(
                 data, output_dtype, exclusive=True, return_reduction=return_reduction, binop=binop
             )
+        '''
 
         if ndim == 1:
             # TIR exclusive scan accepts only 2D or higher-rank inputs.
@@ -422,6 +425,7 @@ def exclusive_scan(
 
         return output
 
+    #import pdb; pdb.set_trace()
     if output_dtype is None or output_dtype == "":
         output_dtype = data.dtype
 
@@ -486,7 +490,7 @@ def inclusive_scan(data, axis=-1, output_dtype=None, binop=tvm.tir.generic.add, 
     if output_dtype is not None and data.dtype != output_dtype and output_dtype != "":
         data = cast(data, output_dtype)
 
-    return binop(data, ex_scan)
+    return binop(data, ex_scan)    
 
 
 def schedule_scan(outs):
@@ -666,3 +670,21 @@ def cumprod(
         dtype=dtype,
         exclusive=exclusive,
     )
+
+def adjacent_diff_dim_zero(data, sorted_indices, out_dtype="int64"):
+    data_buf = tvm.tir.decl_buffer(data.shape, data.dtype, "data_buf", data_alignment=8)
+    sorted_indices_buf = tvm.tir.decl_buffer(sorted_indices.shape, sorted_indices.dtype, "sorted_indices_buf", data_alignment=8)
+    adjacent_diff_buf = tvm.tir.decl_buffer((data.shape[0],), sorted_indices.dtype, "adjacent_diff_buf", data_alignment=8)
+    out = tvm.te.extern(
+        [(data.shape[0],)],
+        [data, sorted_indices],
+        lambda ins, outs: tvm.tir.call_packed(
+            "tvm.contrib.thrust.adjacent_difference_dim_zero", ins[0], ins[1], outs[0]
+        ),
+        in_buffers=[data_buf, sorted_indices_buf],
+        out_buffers=[adjacent_diff_buf],
+        dtype=[out_dtype],
+        name="adjacent_difference_dim_zero",
+        tag="adjacent_difference_dim_zero_gpu",
+    )
+    return out

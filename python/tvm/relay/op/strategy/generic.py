@@ -1949,6 +1949,18 @@ def unique_strategy(attrs, inputs, out_type, target):
     return strategy
 
 
+@override_native_generic_func("unique_dim_strategy")
+def unique_dim_strategy(attrs, inputs, out_type, target):
+    """unique generic strategy"""
+    strategy = _op.OpStrategy()
+    strategy.add_implementation(
+        wrap_compute_unique(topi.unique_dim),
+        wrap_topi_schedule(topi.generic.schedule_unique_dim),
+        name="unique_dim.generic",
+    )
+    return strategy
+
+
 @generic_func
 def schedule_transpose(attrs, outs, target):
     """schedule transpose"""

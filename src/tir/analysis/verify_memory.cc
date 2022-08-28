@@ -97,11 +97,13 @@ class MemoryAccessVerifier final : protected StmtExprVisitor {
   }
 
   void VisitExpr_(const BufferLoadNode* op) final {
+    //LOG(INFO) << "LOAD " << op->buffer->shape << " " << op->buffer->name << " " << op->buffer.scope();
     HandleLoadStoreToVariable(op->buffer->data);
     return StmtExprVisitor::VisitExpr_(op);
   }
 
   void VisitStmt_(const BufferStoreNode* op) final {
+    //LOG(INFO) << "STORE  " << op->buffer->shape << " " << op->buffer->name << " " << op->buffer.scope();
     HandleLoadStoreToVariable(op->buffer->data);
     return StmtExprVisitor::VisitStmt_(op);
   }
@@ -138,7 +140,9 @@ class MemoryAccessVerifier final : protected StmtExprVisitor {
     // If it does not come from args, then it could be allocated internally,
     // it may possibly be in host or device address space.
     // We do not handle this case, and skip it conservatively.
-    if (!IsFromFunctionArgs(var.get())) return;
+    //if (!IsFromFunctionArgs(var.get())) return;
+    if (IsFromFunctionArgs(var.get())) return;
+    //return;
 
     // The verification fails in this case.
     std::stringstream s;
@@ -202,6 +206,7 @@ namespace transform {
 
 Pass VerifyMemory() {
   auto pass_func = [=](IRModule mod, PassContext ctx) {
+    //LOG(INFO) << mod;
     for (auto kv : mod->functions) {
       if (auto* n = kv.second.as<PrimFuncNode>()) {
         auto func = GetRef<PrimFunc>(n);
